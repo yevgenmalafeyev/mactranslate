@@ -1,0 +1,20 @@
+# Build output
+.build/
+build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+
+# Local / personal settings (signing identity, keys, env)
+build.local.sh
+*.local
+.env
+.env.*
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# macOS
+.DS_Store
