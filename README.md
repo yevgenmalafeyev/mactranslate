@@ -28,3 +28,6 @@ Create a gitignored `build.local.sh` with your identity so the Input Monitoring 
     IDENTITY="Apple Development: Your Name (TEAMID)"
 
 Without it the app is signed ad-hoc and macOS may ask for the permission again after each rebuild.
+
+## License
+MIT — see [LICENSE](LICENSE). Images shown in the app come from third-party providers under their own licenses (credited in the UI).
