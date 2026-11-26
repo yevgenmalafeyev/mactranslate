@@ -1,5 +1,5 @@
 import Foundation
-import MacTranslateCore
+import mTranslateCore
 
 // Usage: mtprobe "text" [--target ru] [--mono pt] [--card word] [--model sonnet] [--effort low] [--raw]
 var args = Array(CommandLine.arguments.dropFirst())

@@ -1,5 +1,5 @@
 import AppKit
-import MacTranslateCore
+import mTranslateCore
 import ServiceManagement
 import SwiftUI
 
@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for u in urls where u.scheme == "mactranslate" {
+        for u in urls where u.scheme == "mtranslate" {
             if u.host == "settings" { openSettings(); continue }
             if u.host == "history" { openHistory(); continue }
             let text = URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "text" }?.value
@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return true
         }
         img.isTemplate = true
-        img.accessibilityDescription = "MacTranslate"
+        img.accessibilityDescription = "mTranslate"
         return img
     }
 
@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         conf.target = self
         menu.addItem(conf)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit MacTranslate", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit mTranslate", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     @objc private func grantPermission() {
@@ -144,13 +144,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func openSettings() {
-        settingsWindow = showWindow(settingsWindow, title: "MacTranslate Configuration", size: NSSize(width: 560, height: 520)) {
+        settingsWindow = showWindow(settingsWindow, title: "mTranslate Configuration", size: NSSize(width: 560, height: 520)) {
             AnyView(SettingsView(trigger: self.trigger))
         }
     }
 
     @objc func openHistory() {
-        historyWindow = showWindow(historyWindow, title: "MacTranslate History", size: NSSize(width: 620, height: 560)) {
+        historyWindow = showWindow(historyWindow, title: "mTranslate History", size: NSSize(width: 620, height: 560)) {
             AnyView(HistoryView())
         }
     }
@@ -185,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "Quit MacTranslate", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "Quit mTranslate", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appItem.submenu = appMenu
         let editItem = NSMenuItem()
         main.addItem(editItem)

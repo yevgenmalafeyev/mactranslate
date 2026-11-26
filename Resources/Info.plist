@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key><string>__BUNDLE_ID__</string>
-	<key>CFBundleName</key><string>MacTranslate</string>
-	<key>CFBundleDisplayName</key><string>MacTranslate</string>
-	<key>CFBundleExecutable</key><string>MacTranslate</string>
+	<key>CFBundleName</key><string>mTranslate</string>
+	<key>CFBundleDisplayName</key><string>mTranslate</string>
+	<key>CFBundleExecutable</key><string>mTranslate</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>__VERSION__</string>
 	<key>CFBundleVersion</key><string>__BUILD__</string>
@@ -18,7 +18,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key><string>__BUNDLE_ID__</string>
-			<key>CFBundleURLSchemes</key><array><string>mactranslate</string></array>
+			<key>CFBundleURLSchemes</key><array><string>mtranslate</string></array>
 		</dict>
 	</array>
 </dict>

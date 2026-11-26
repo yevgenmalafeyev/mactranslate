@@ -1,5 +1,5 @@
 import Foundation
-import MacTranslateCore
+import mTranslateCore
 import Observation
 
 @MainActor @Observable

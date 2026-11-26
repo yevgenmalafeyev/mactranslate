@@ -1,4 +1,4 @@
-// Renders the MacTranslate app icon and builds Resources/AppIcon.icns.
+// Renders the mTranslate app icon and builds Resources/AppIcon.icns.
 // Usage: swift Scripts/make_icon.swift
 import AppKit
 

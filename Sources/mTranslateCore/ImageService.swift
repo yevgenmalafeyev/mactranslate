@@ -28,7 +28,7 @@ public actor ImageService {
         let c = URLSessionConfiguration.default
         c.urlCache = URLCache(memoryCapacity: 4 << 20, diskCapacity: 64 << 20)
         c.timeoutIntervalForRequest = 6
-        c.httpAdditionalHeaders = ["User-Agent": "MacTranslate/1.0 (https://github.com/yevgenmalafeyev/mactranslate)"]
+        c.httpAdditionalHeaders = ["User-Agent": "mTranslate/1.0 (https://github.com/yevgenmalafeyev/mtranslate)"]
         return URLSession(configuration: c)
     }()
 

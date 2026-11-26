@@ -1,9 +1,11 @@
 #!/bin/bash
-# Build, bundle and sign MacTranslate.app.  Usage: ./build.sh [install]
+# Build, bundle and sign mTranslate.app.  Usage: ./build.sh [install|dmg]
+#   install  copy to ~/Applications and launch
+#   dmg      also package build/mTranslate-<version>.dmg (universal binary) for distribution
 set -euo pipefail
 cd "$(dirname "$0")"
-APP=MacTranslate
-BUNDLE_ID=local.mactranslate.app
+APP=mTranslate
+BUNDLE_ID=local.mtranslate.app
 # Signing identity: set IDENTITY in the environment or in the gitignored build.local.sh, e.g.
 #   IDENTITY="Apple Development: Your Name (TEAMID)"
 # A stable identity keeps the Input Monitoring permission across rebuilds. Default "-" = ad-hoc signing.
@@ -12,8 +14,11 @@ IDENTITY="${IDENTITY:--}"
 VERSION=${VERSION:-0.1.0}
 BUILD=$(date +%Y%m%d%H%M)
 
-swift build -c release --arch arm64 --product "$APP"
-BIN="$(swift build -c release --arch arm64 --show-bin-path)/$APP"
+# The distributable DMG gets a universal (Apple silicon + Intel) binary; local builds stay arm64-only.
+ARCHS=(--arch arm64)
+[ "${1:-}" = "dmg" ] && ARCHS=(--arch arm64 --arch x86_64)
+swift build -c release "${ARCHS[@]}" --product "$APP"
+BIN="$(swift build -c release "${ARCHS[@]}" --show-bin-path)/$APP"
 OUT="build/$APP.app"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
@@ -33,4 +38,15 @@ if [ "${1:-}" = "install" ]; then
   ditto "$OUT" ~/Applications/$APP.app
   open ~/Applications/$APP.app
   echo "Installed to ~/Applications/$APP.app"
+fi
+
+if [ "${1:-}" = "dmg" ]; then
+  DMG="build/$APP-$VERSION.dmg"
+  STAGE=$(mktemp -d)
+  ditto "$OUT" "$STAGE/$APP.app"
+  ln -s /Applications "$STAGE/Applications"
+  rm -f "$DMG"
+  hdiutil create -volname "$APP" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
+  rm -rf "$STAGE"
+  echo "Packaged $DMG"
 fi

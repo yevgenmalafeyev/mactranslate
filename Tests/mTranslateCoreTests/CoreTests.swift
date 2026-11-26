@@ -1,5 +1,5 @@
 import XCTest
-@testable import MacTranslateCore
+@testable import mTranslateCore
 
 final class StreamParserTests: XCTestCase {
     let sample = "LANG: en\nБыстрая лиса.\nВторая строка.\n@@WORDS@@\n{\"w\":\"lazy\",\"l\":\"lazy\",\"p\":\"adj\",\"m\":[\"ленивый\",\"вялый\"]}\n{\"w\":\"jumps\",\"l\":\"jump\",\"p\":\"v\",\"m\":[\"прыгать\"]}\n"

@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "MacTranslate",
+    name: "mTranslate",
     platforms: [.macOS(.v15)],
     targets: [
         .target(
-            name: "MacTranslateCore",
+            name: "mTranslateCore",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
-        .executableTarget(name: "MacTranslate", dependencies: ["MacTranslateCore"]),
-        .executableTarget(name: "mtprobe", dependencies: ["MacTranslateCore"]),
-        .testTarget(name: "MacTranslateCoreTests", dependencies: ["MacTranslateCore"]),
+        .executableTarget(name: "mTranslate", dependencies: ["mTranslateCore"]),
+        .executableTarget(name: "mtprobe", dependencies: ["mTranslateCore"]),
+        .testTarget(name: "mTranslateCoreTests", dependencies: ["mTranslateCore"]),
     ]
 )

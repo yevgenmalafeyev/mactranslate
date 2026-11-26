@@ -29,7 +29,7 @@ public actor Store {
 
     public static var directory: URL {
         let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MacTranslate", isDirectory: true)
+            .appendingPathComponent("mTranslate", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d
     }

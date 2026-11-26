@@ -1,6 +1,6 @@
 import AppKit
 import CoreGraphics
-import MacTranslateCore
+import mTranslateCore
 
 enum Permissions {
     static var inputMonitoringGranted: Bool { CGPreflightListenEventAccess() }

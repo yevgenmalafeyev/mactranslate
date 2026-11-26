@@ -1,9 +1,9 @@
 import Foundation
-import MacTranslateCore
+import mTranslateCore
 import Observation
 import os
 
-let log = Logger(subsystem: "local.mactranslate.app", category: "app")
+let log = Logger(subsystem: "local.mtranslate.app", category: "app")
 
 struct SnippetContext: Sendable {
     let id: Int64      // -1 when the store is unavailable (no caching)

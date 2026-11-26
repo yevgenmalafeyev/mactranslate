@@ -1,5 +1,5 @@
 import AppKit
-import MacTranslateCore
+import mTranslateCore
 import SwiftUI
 
 final class PopupPanel: NSPanel {
@@ -208,7 +208,7 @@ final class PopupController: NSObject, NSWindowDelegate {
     }
 }
 
-/// Shows the Dock icon while any MacTranslate window is visible; menu-bar only otherwise.
+/// Shows the Dock icon while any mTranslate window is visible; menu-bar only otherwise.
 @MainActor
 enum Dock {
     static func update() {

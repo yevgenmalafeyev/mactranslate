@@ -1,4 +1,4 @@
-import MacTranslateCore
+import mTranslateCore
 import SwiftUI
 
 struct SettingsView: View {

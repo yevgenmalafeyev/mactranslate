@@ -1,21 +1,21 @@
-# MacTranslate
+# mTranslate
 
 Menu-bar app: select text anywhere, press **⌘C ⌘C** quickly → popup with translation, word list and clickable word cards (via local `claude` CLI).
 
 - Tabs: one per target language (⌘1…⌘9) + last tab explaining the snippet in its own language. Portuguese is always pt-PT.
 - Click any word (or a word-list row) → full card: POS, gender, IPA, forms, all meanings, examples, pronunciation, images (Pexels → Wikipedia/Commons → Openverse).
 - ESC: card → back; snippet → close. ⌘W closes.
-- In-flight translations finish in the background and land in History (SQLite at `~/Library/Application Support/MacTranslate/`).
+- In-flight translations finish in the background and land in History (SQLite at `~/Library/Application Support/mTranslate/`).
 
 ## Build
     ./build.sh install            # release build, sign, install to ~/Applications, launch
     swift test                    # core unit tests
     swift run mtprobe "text" --target ru [--mono pt] [--card word]   # CLI probe of prompts/parser
-    open "mactranslate://translate?text=Hello"                        # trigger popup without the hotkey
+    open "mtranslate://translate?text=Hello"                        # trigger popup without the hotkey
     swift Scripts/make_icon.swift # regenerate Resources/AppIcon.icns
 
-Logs: `/usr/bin/log stream --predicate 'subsystem == "local.mactranslate.app"'`
-Reset permission: `tccutil reset ListenEvent local.mactranslate.app`
+Logs: `/usr/bin/log stream --predicate 'subsystem == "local.mtranslate.app"'`
+Reset permission: `tccutil reset ListenEvent local.mtranslate.app`
 
 ## Requirements
 - macOS 15+, Xcode / Swift 6 toolchain

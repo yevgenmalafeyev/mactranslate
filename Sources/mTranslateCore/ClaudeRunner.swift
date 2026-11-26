@@ -114,7 +114,7 @@ public struct ClaudeRunner: Sendable {
 
     static var workingDirectory: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MacTranslate", isDirectory: true)
+            .appendingPathComponent("mTranslate", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         return support
     }

@@ -1,4 +1,7 @@
 import AppKit
+import mTranslateCore
+
+LegacyMigration.runIfNeeded()
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared

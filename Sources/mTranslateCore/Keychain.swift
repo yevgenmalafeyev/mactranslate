@@ -2,8 +2,12 @@ import Foundation
 import Security
 
 public enum Keychain {
-    public static func get(_ name: String) -> String? {
-        let service = "local.mactranslate.app.\(name)", account = "default"
+    static let prefix = "local.mtranslate.app."
+
+    public static func get(_ name: String) -> String? { get(service: prefix + name) }
+
+    static func get(service: String) -> String? {
+        let account = "default"
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true,
                                 kSecMatchLimit as String: kSecMatchLimitOne]
@@ -13,7 +17,7 @@ public enum Keychain {
     }
 
     public static func set(_ name: String, _ value: String?) {
-        let service = "local.mactranslate.app.\(name)", account = "default"
+        let service = prefix + name, account = "default"
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account]
         SecItemDelete(q as CFDictionary)
