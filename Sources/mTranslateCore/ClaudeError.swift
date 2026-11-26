@@ -11,7 +11,7 @@ public enum ClaudeError: Error, Equatable, Sendable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .cliNotFound:
-            "Claude CLI not found. Set its path in Configuration."
+            "Claude CLI not found. Install Claude Code so that `claude` is in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin."
         case .notLoggedIn:
             "Claude CLI is not logged in. Run `claude` in Terminal and log in."
         case .rateLimited(let d):

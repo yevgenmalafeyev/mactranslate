@@ -31,7 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if old.triggerMode != new.triggerMode || old.doublePressMs != new.doublePressMs { self.trigger.start() }
             if old.launchAtLogin != new.launchAtLogin { LoginItem.set(new.launchAtLogin) }
-            if old.claudePath != new.claudePath { JobCenter.shared.resetBinary(); Task { await ClaudePool.shared.closeAll() } }
             if old.keepWarmMinutes != new.keepWarmMinutes || old.model != new.model { self.configurePool(new) }
         }
 
@@ -55,15 +54,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         JobCenter.shared.cancelAll()
+        Tools.killAll()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        for u in urls where u.scheme == "mtranslate" {
-            if u.host == "settings" { openSettings(); continue }
-            if u.host == "history" { openHistory(); continue }
-            let text = URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "text" }?.value
-            if let text { PopupController.shared.present(text: text) }
+        // Any web page, message or program can open mtranslate:// links, so a link never starts anything
+        // by itself: it only shows its text in the popup, and the user decides whether to translate it.
+        // Only the last link of a batch is shown (one popup, nothing queued).
+        let texts = urls.compactMap { u -> String? in
+            guard u.scheme?.lowercased() == "mtranslate", u.host?.lowercased() == "translate" else { return nil }
+            return URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "text" }?.value
         }
+        if let text = texts.last { PopupController.shared.present(linkText: text) }
     }
 
     private func updateIcon() {
@@ -131,12 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func relaunch() {
-        let path = Bundle.main.bundlePath
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "sleep 0.5; /usr/bin/open \"\(path)\""]
-        try? p.run()
-        NSApp.terminate(nil)
+        // No shell (the app's path would be part of a command line) and no child process of this app.
+        let conf = NSWorkspace.OpenConfiguration()
+        conf.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: conf) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
     }
 
     @objc private func translateClipboard() {

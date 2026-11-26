@@ -119,23 +119,12 @@ final class JobCenter {
     private var tabJobs: [String: TabJob] = [:]
     private var cardJobs: [String: CardJob] = [:]
     private let limiter = Limiter(3)
-    private var binary: URL?
     private var settings: AppSettings { SettingsStore.shared.s }
 
     func cancelAll() {
         tabJobs.values.forEach { $0.task?.cancel() }
         cardJobs.values.forEach { $0.task?.cancel() }
         Task { await ClaudePool.shared.closeAll() }
-    }
-
-    func resetBinary() { binary = nil }
-
-    private func claudeBinary() async -> URL? {
-        if let binary, FileManager.default.isExecutableFile(atPath: binary.path) { return binary }
-        let configured = settings.claudePath
-        let found = await Task.detached { ClaudeLocator.locate(configured: configured) }.value
-        binary = found
-        return found
     }
 
     // MARK: Tabs
@@ -163,14 +152,15 @@ final class JobCenter {
             j.status = .done
             return
         }
-        guard let bin = await claudeBinary() else { j.status = .failed(.cliNotFound); return }
+        guard Tools.claude != nil else { j.status = .failed(.cliNotFound); return }
 
+        let tag = Prompts.newTag("snippet")
         let system = switch j.target {
-        case .translate(let l): Prompts.translationSystem(target: l, level: level)
-        case .mono(let l): Prompts.monoSystem(source: l, level: level)
+        case .translate(let l): Prompts.translationSystem(target: l, level: level, tag: tag)
+        case .mono(let l): Prompts.monoSystem(source: l, level: level, tag: tag)
         }
         let model = j.model
-        let user = Prompts.snippetUser(snippet.text)
+        let user = Prompts.snippetUser(snippet.text, tag: tag)
         let streaming = settings.streaming
 
         await limiter.acquire()
@@ -205,7 +195,7 @@ final class JobCenter {
         }
 
         do {
-            for try await ev in await ClaudePool.shared.stream(binary: bin, model: model, system: system, user: user) {
+            for try await ev in await ClaudePool.shared.stream(model: model, system: system, user: user, scope: snippet.hash) {
                 switch ev {
                 case .text(let t):
                     raw += t
@@ -246,7 +236,11 @@ final class JobCenter {
                         try? await Store.shared.saveTranslation(snippetId: snippet.id, target: target, level: level.rawValue,
                                                                 model: model, translation: translation, words: words)
                         if let src {
-                            try? await Store.shared.saveForms(words.map { ($0.w, $0.l) }, sourceLang: src)
+                            // Only forms that really occur in the snippet, and never replacing a known one:
+                            // the list is model output shaped by text that may come from anywhere.
+                            let folded = TextTools.fold(snippet.text)
+                            let seen = words.filter { !$0.w.isEmpty && folded.contains(TextTools.fold($0.w)) }
+                            try? await Store.shared.saveForms(seen.map { ($0.w, $0.l) }, sourceLang: src, replace: false)
                         }
                     }
                 }
@@ -303,16 +297,18 @@ final class JobCenter {
            i < card.senses.count {
             j.markContext(i); return
         }
-        guard card.senses.count > 1, let bin = await claudeBinary() else {
+        guard card.senses.count > 1, Tools.claude != nil else {
             if card.senses.count == 1 { j.markContext(0) }
             return
         }
         j.resolvingContext = true
         defer { j.resolvingContext = false }
         var text = ""
+        let tag = Prompts.newTag("data")
         do {
-            for try await ev in await ClaudePool.shared.stream(binary: bin, model: settings.model, system: Prompts.pickSenseSystem,
-                                                              user: Prompts.pickSenseUser(word: j.surface, sentence: j.sentence, senses: card.senses)) {
+            for try await ev in await ClaudePool.shared.stream(model: settings.model, system: Prompts.pickSenseSystem(tag: tag),
+                                                              user: Prompts.pickSenseUser(word: j.surface, sentence: j.sentence, senses: card.senses, tag: tag),
+                                                              scope: "card:" + TextTools.hash(j.sentence)) {
                 if case .text(let t) = ev { text += t }
             }
         } catch { return }
@@ -329,10 +325,11 @@ final class JobCenter {
         if let card = try? await store.card(lemma: lemma, sourceLang: src, target: j.target.id) {
             fill(j, card); return
         }
-        guard let bin = await claudeBinary() else { j.status = .failed(.cliNotFound); return }
+        guard Tools.claude != nil else { j.status = .failed(.cliNotFound); return }
         let model = settings.model
-        let system = Prompts.cardSystem(source: j.source, target: j.target)
-        let user = Prompts.cardUser(word: j.surface, sentence: j.sentence)
+        let tag = Prompts.newTag("data")
+        let system = Prompts.cardSystem(source: j.source, target: j.target, tag: tag)
+        let user = Prompts.cardUser(word: j.surface, sentence: j.sentence, tag: tag)
         await limiter.acquire()
         let watchdog = Task { [weak j] in
             try? await Task.sleep(for: .seconds(20))
@@ -344,7 +341,7 @@ final class JobCenter {
         var full: String?
         var usedCache = false
         do {
-            loop: for try await ev in await ClaudePool.shared.stream(binary: bin, model: model, system: system, user: user) {
+            loop: for try await ev in await ClaudePool.shared.stream(model: model, system: system, user: user, scope: "card:" + TextTools.hash(j.sentence)) {
                 switch ev {
                 case .text(let t):
                     for e in parser.feed(t) {
@@ -372,7 +369,7 @@ final class JobCenter {
                 }
             }
             if usedCache {
-                try? await store.saveForms([(j.surface, j.head?.lemma ?? lemma)], sourceLang: src)
+                try? await store.saveForms([(j.surface, j.head?.lemma ?? lemma)], sourceLang: src, replace: false)
             } else {
                 for e in parser.finish() {
                     if case .sense(let s) = e { j.senses.append(s); loadImages(j, j.senses.count - 1) }
@@ -414,8 +411,15 @@ final class JobCenter {
         let s = j.senses[i]
         j.imagesLoading.insert(i)
         let providers = SettingsStore.shared.imageProviders
+        // The search words are model output: only short plain queries leave the machine.
+        guard let query = ImageService.cleanQuery(s.img) ?? ImageService.cleanQuery(s.gloss) else {
+            j.images[i] = []
+            j.imagesLoading.remove(i)
+            return
+        }
+        let wiki = s.wiki.flatMap { ImageService.cleanQuery($0, maxLength: 80, maxWords: 10) }
         Task { [weak j] in
-            let hits = await ImageService.shared.hits(query: s.img, wiki: s.wiki, providers: providers)
+            let hits = await ImageService.shared.hits(query: query, wiki: wiki, providers: providers)
             j?.images[i] = hits
             j?.imagesLoading.remove(i)
         }

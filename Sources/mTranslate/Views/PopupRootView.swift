@@ -8,6 +8,8 @@ struct PopupRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             switch session.route {
+            case .snippet where session.pendingLink:
+                LinkConfirmView(session: session, close: close)
             case .snippet:
                 SnippetHomeView(session: session)
             case .card(let job):
@@ -17,6 +19,43 @@ struct PopupRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial)
         .ignoresSafeArea()
+    }
+}
+
+/// Text from an mtranslate:// link, shown as plain text. Only a mouse click on Translate starts anything.
+struct LinkConfirmView: View {
+    @Bindable var session: PopupSession
+    let close: () -> Void
+    /// The button works only after the popup has been on screen for a moment, so a click that was
+    /// already on its way to whatever was underneath can't confirm the text.
+    @State private var armed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("A link asked mTranslate to translate this text", systemImage: "link")
+                .font(.system(size: fs(13), weight: .semibold))
+            Text("Nothing has been sent or saved. Translate it only if you expected this.")
+                .font(.system(size: fs(11))).foregroundStyle(.secondary)
+            ScrollView {
+                Text(verbatim: session.text)
+                    .font(.system(size: fs(14)))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+            }
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            HStack {
+                Spacer()
+                Button("Dismiss", action: close).focusable(false)
+                Button("Translate") { if armed { session.confirmLink() } }.focusable(false).disabled(!armed)
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .milliseconds(1200))
+            armed = true
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 34)
+        .padding(.bottom, 16)
     }
 }
 
@@ -187,9 +226,9 @@ struct WordRow: View {
         var t = Text("")
         for (i, m) in entry.m.enumerated() {
             if i == 0 {
-                t = t + Text("1. \(m)").foregroundColor(.accentColor).bold()
+                t = t + Text(verbatim: "1. \(m)").foregroundColor(.accentColor).bold()
             } else {
-                t = t + Text("   \(i + 1). \(m)").foregroundColor(.secondary)
+                t = t + Text(verbatim: "   \(i + 1). \(m)").foregroundColor(.secondary)
             }
         }
         return t
@@ -201,7 +240,7 @@ struct WordRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(entry.w).font(.system(size: fs(14), weight: .semibold))
                     if entry.l.lowercased() != entry.w.lowercased() {
-                        Text("← \(entry.l)").font(.system(size: fs(12))).foregroundStyle(.secondary)
+                        Text(verbatim: "← \(entry.l)").font(.system(size: fs(12))).foregroundStyle(.secondary)
                     }
                     if !entry.p.isEmpty {
                         Text(entry.p).font(.system(size: fs(11))).foregroundStyle(.tertiary)

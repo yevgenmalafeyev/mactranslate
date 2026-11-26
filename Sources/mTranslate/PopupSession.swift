@@ -27,6 +27,8 @@ final class PopupSession {
     var route: Route = .snippet
     /// Opened from history directly into a card: ESC closes instead of going back.
     var cardOnly = false
+    /// The text came from an mtranslate:// link and waits for the user's click; until then nothing runs.
+    var pendingLink = false
 
     private var settings: AppSettings { SettingsStore.shared.s }
 
@@ -38,7 +40,15 @@ final class PopupSession {
 
     var activeJob: TabJob? { active.flatMap { jobs[$0.id] } }
 
+    /// The user accepted the text of a link.
+    func confirmLink() {
+        guard pendingLink else { return }
+        pendingLink = false
+        Task { await start() }
+    }
+
     func start() async {
+        guard !pendingLink else { return }
         let hash = TextTools.hash(text)
         let hints = Array(Set(settings.enabled.map(\.base)))
         if let r = try? await Store.shared.touchSnippet(hash: hash, text: text) {
@@ -60,6 +70,7 @@ final class PopupSession {
     }
 
     func select(_ t: TabTarget) {
+        guard !pendingLink else { return }
         active = t
         route = .snippet
         ensureJob(t)
@@ -156,7 +167,7 @@ final class PopupSession {
     }
 
     private func openCard(surface: String, sentence: String) {
-        guard let target = active else { return }
+        guard !pendingLink, let target = active else { return }
         let j = JobCenter.shared.cardJob(surface: surface, sentence: sentence, source: source, target: target)
         route = .card(j)
     }

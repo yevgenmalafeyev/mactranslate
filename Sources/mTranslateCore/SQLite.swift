@@ -19,7 +19,10 @@ final class SQLiteDB {
         if sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nil) != SQLITE_OK {
             throw SQLError(description: "open failed: \(path)")
         }
-        try exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")
+        // History is the user's own text: readable by the owner only (the -wal/-shm files inherit this),
+        // and deleted rows are overwritten rather than left in the file.
+        for suffix in ["", "-wal", "-shm"] { chmod(path + suffix, 0o600) }
+        try exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA trusted_schema=OFF; PRAGMA cell_size_check=ON;")
     }
 
     deinit { sqlite3_close_v2(db) }
@@ -58,7 +61,7 @@ final class SQLiteDB {
                 case SQLITE_INTEGER: row.append(.int(sqlite3_column_int64(st, i)))
                 case SQLITE_FLOAT: row.append(.double(sqlite3_column_double(st, i)))
                 case SQLITE_NULL: row.append(.null)
-                default: row.append(.text(String(cString: sqlite3_column_text(st, i))))
+                default: row.append(sqlite3_column_text(st, i).map { .text(String(cString: $0)) } ?? .null)
                 }
             }
             rows.append(row)
@@ -80,7 +83,8 @@ final class SQLiteDB {
             switch a {
             case .int(let v): sqlite3_bind_int64(st, idx, v)
             case .double(let v): sqlite3_bind_double(st, idx, v)
-            case .text(let v): sqlite3_bind_text(st, idx, v, -1, SQLITE_TRANSIENT)
+            // NUL would cut the stored text short of what was hashed and sent: it is dropped.
+            case .text(let v): sqlite3_bind_text(st, idx, v.replacingOccurrences(of: "\0", with: ""), -1, SQLITE_TRANSIENT)
             case .null: sqlite3_bind_null(st, idx)
             }
         }

@@ -85,6 +85,20 @@ final class PopupController: NSObject, NSWindowDelegate {
         Task { await s.start() }
     }
 
+    /// Text that arrived in an mtranslate:// link: shown for confirmation, nothing is sent or stored
+    /// until the user clicks Translate. The popup does not take the keyboard, so a key the user was
+    /// about to press in another app can't confirm it.
+    func present(linkText text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        // A link must not replace what the user is looking at, including an earlier link's text
+        // (it could be swapped just before the click): that one has to be dismissed first.
+        if let panel, panel.isVisible, session != nil { return }
+        let s = PopupSession(text: String(t.prefix(2000)))
+        s.pendingLink = true
+        show(session: s, takeKeyboard: false)
+    }
+
     func present(card row: CardRow) {
         let s = PopupSession(text: row.lemma)
         s.cardOnly = true
@@ -97,7 +111,7 @@ final class PopupController: NSObject, NSWindowDelegate {
         show(session: s)
     }
 
-    private func show(session s: PopupSession) {
+    private func show(session s: PopupSession, takeKeyboard: Bool = true) {
         let front = NSWorkspace.shared.frontmostApplication
         if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
         session = s
@@ -110,7 +124,7 @@ final class PopupController: NSObject, NSWindowDelegate {
         panel.contentView = host
         position(panel)
         panel.level = .floating
-        panel.makeKeyAndOrderFront(nil)
+        if takeKeyboard { panel.makeKeyAndOrderFront(nil) } else { panel.orderFrontRegardless() }
         position(panel)
         Dock.update()
     }
@@ -165,7 +179,7 @@ final class PopupController: NSObject, NSWindowDelegate {
         }
         guard flags.contains(.command) else { return false }
         let ch = e.charactersIgnoringModifiers ?? ""
-        if let d = Int(ch), (1...9).contains(d), let s = session {
+        if let d = Int(ch), (1...9).contains(d), let s = session, !s.pendingLink {
             s.select(index: d - 1)
             return true
         }

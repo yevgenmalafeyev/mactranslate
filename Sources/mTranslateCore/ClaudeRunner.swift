@@ -40,29 +40,46 @@ public enum ClaudeEvent: Sendable, Equatable {
 }
 
 public struct ClaudeRequest: Sendable {
-    public var binary: URL
     public var model: ClaudeModel
     public var system: String
     public var user: String
     public var effort: String?
 
-    public init(binary: URL, model: ClaudeModel, system: String, user: String, effort: String? = nil) {
-        self.binary = binary; self.model = model; self.system = system; self.user = user; self.effort = effort
+    public init(model: ClaudeModel, system: String, user: String, effort: String? = nil) {
+        self.model = model; self.system = system; self.user = user; self.effort = effort
     }
 
-    public var arguments: [String] {
+    /// Flags for every claude call. The model only ever turns text into text here, and the text it reads
+    /// is untrusted (anything the user selected, or a link supplied), so it gets no tools, no MCP servers,
+    /// no slash commands or skills, no user/project settings, hooks or plugins, and leaves no session files.
+    /// `system` must be app-written text only; user data goes in through standard input, never the command line.
+    public static func arguments(model: ClaudeModel, system: String, effort: String? = nil) -> [String] {
         var a = ["-p", "--model", model.rawValue,
-                 "--tools", "",
+                 "--safe-mode",
+                 "--restricted",
                  "--strict-mcp-config",
-                 "--setting-sources", "",
                  "--disable-slash-commands",
                  "--no-session-persistence",
+                 "--permission-mode", "dontAsk",
+                 "--tools", "",
+                 "--setting-sources", "",
+                 "--input-format", "stream-json",
                  "--output-format", "stream-json",
                  "--include-partial-messages",
                  "--verbose"]
         if let effort { a += ["--effort", effort] }
-        a += ["--system-prompt", system, user]
+        a += ["--system-prompt", system]
         return a
+    }
+
+    public var arguments: [String] { Self.arguments(model: model, system: system, effort: effort) }
+
+    /// One user turn in the CLI's stream-json input format (a single line).
+    static func userMessage(_ content: String) -> Data? {
+        let msg: [String: Any] = ["type": "user", "message": ["role": "user", "content": content]]
+        guard var data = try? JSONSerialization.data(withJSONObject: msg) else { return nil }
+        data.append(0x0A)
+        return data
     }
 }
 
@@ -74,6 +91,8 @@ final class LineBuffer: @unchecked Sendable {
     func append(_ d: Data) -> [String] {
         lock.lock(); defer { lock.unlock() }
         data.append(d)
+        // A line this long is not a CLI event: drop it instead of growing without bound.
+        if data.count > 8 << 20, data.firstIndex(of: 0x0A) == nil { data.removeAll() }
         var lines: [String] = []
         while let nl = data.firstIndex(of: 0x0A) {
             let lineData = data[data.startIndex..<nl]
@@ -98,95 +117,41 @@ final class StderrBuffer: @unchecked Sendable {
     var text: String { lock.lock(); defer { lock.unlock() }; return String(decoding: data, as: UTF8.self) }
 }
 
-final class ProcessBox: @unchecked Sendable {
-    let process = Process()
-}
-
 public struct ClaudeRunner: Sendable {
     public init() {}
 
-    static func environment(for binary: URL) -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
-        let extra = [binary.deletingLastPathComponent().path, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
-        env["PATH"] = (extra + [env["PATH"] ?? ""]).joined(separator: ":")
-        return env
-    }
-
-    static var workingDirectory: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("mTranslate", isDirectory: true)
-        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
-        return support
-    }
+    /// A one-shot call may not run longer than this; then it is stopped with everything it started.
+    static let timeout: TimeInterval = 120
 
     public func stream(_ req: ClaudeRequest) -> AsyncThrowingStream<ClaudeEvent, Error> {
         AsyncThrowingStream { cont in
-            let box = ProcessBox()
-            let p = box.process
-            let out = Pipe(), err = Pipe()
-            p.executableURL = req.binary
-            p.arguments = req.arguments
-            p.standardInput = FileHandle.nullDevice
-            p.standardOutput = out
-            p.standardError = err
-            p.environment = Self.environment(for: req.binary)
-            p.currentDirectoryURL = Self.workingDirectory
-
-            let q = DispatchQueue(label: "claude.runner.output")
+            guard let binary = Tools.claude else { cont.finish(throwing: ClaudeError.cliNotFound); return }
+            guard let message = ClaudeRequest.userMessage(req.user) else {
+                cont.finish(throwing: ClaudeError.malformedOutput); return
+            }
             let lines = LineBuffer()
             let stderr = StderrBuffer()
-            let group = DispatchGroup()
-            group.enter() // stdout EOF
-            group.enter() // stderr EOF
-            group.enter() // termination
-
-            out.fileHandleForReading.readabilityHandler = { h in
-                let d = h.availableData
-                if d.isEmpty {
-                    h.readabilityHandler = nil
-                    q.async {
-                        let rest = lines.flush()
-                        if let ev = ClaudeEvent.decode(rest) { cont.yield(ev) }
-                        group.leave()
-                    }
-                    return
-                }
-                let ls = lines.append(d)
-                q.async { for l in ls { if let ev = ClaudeEvent.decode(l) { cont.yield(ev) } } }
-            }
-            err.fileHandleForReading.readabilityHandler = { h in
-                let d = h.availableData
-                if d.isEmpty { h.readabilityHandler = nil; group.leave(); return }
-                stderr.append(d)
-            }
-            p.terminationHandler = { _ in group.leave() }
-
-            group.notify(queue: q) {
-                let status = box.process.terminationStatus
-                if status != 0 {
-                    cont.finish(throwing: ClaudeError.classify(status: status, text: stderr.text))
-                } else {
-                    cont.finish()
-                }
-            }
-
             do {
-                try p.run()
-            } catch {
-                out.fileHandleForReading.readabilityHandler = nil
-                err.fileHandleForReading.readabilityHandler = nil
-                cont.finish(throwing: ClaudeError.cliNotFound)
-                return
-            }
-
-            cont.onTermination = { reason in
-                if case .cancelled = reason, box.process.isRunning {
-                    box.process.terminate()
-                    let pid = box.process.processIdentifier
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
-                        if box.process.isRunning { kill(pid, SIGKILL) }
-                    }
+                let child = try Tools.start(binary, req.arguments, timeout: Self.timeout,
+                    onOutput: { d in
+                        for l in lines.append(d) { if let ev = ClaudeEvent.decode(l) { cont.yield(ev) } }
+                    },
+                    onError: { stderr.append($0) },
+                    onExit: { status in
+                        if let ev = ClaudeEvent.decode(lines.flush()) { cont.yield(ev) }
+                        if status != 0 {
+                            cont.finish(throwing: ClaudeError.classify(status: status, text: stderr.text))
+                        } else {
+                            cont.finish()
+                        }
+                    })
+                child.write(message)
+                child.closeInput()
+                cont.onTermination = { reason in
+                    if case .cancelled = reason { child.terminate() }
                 }
+            } catch {
+                cont.finish(throwing: ClaudeError.failed(status: -1, detail: error.localizedDescription))
             }
         }
     }

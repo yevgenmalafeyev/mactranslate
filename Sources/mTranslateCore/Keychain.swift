@@ -16,6 +16,12 @@ public enum Keychain {
         return String(data: d, encoding: .utf8)
     }
 
+    static func delete(service: String) {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecAttrAccount as String: "default"]
+        SecItemDelete(q as CFDictionary)
+    }
+
     public static func set(_ name: String, _ value: String?) {
         let service = prefix + name, account = "default"
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,

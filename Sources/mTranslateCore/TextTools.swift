@@ -12,6 +12,8 @@ public struct WordToken: Hashable, Sendable {
 public enum TextTools {
     public static func normalize(_ s: String) -> String {
         var t = s.precomposedStringWithCanonicalMapping
+        // Control characters other than line break and tab never belong to text to translate.
+        t = t.replacingOccurrences(of: "[\\p{Cc}&&[^\\n\\r\\t]]", with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: "\r\n", with: "\n")
         t = t.replacingOccurrences(of: "[ \\t\\u00A0]+", with: " ", options: .regularExpression)
         t = t.replacingOccurrences(of: " *\\n *", with: "\n", options: .regularExpression)

@@ -21,7 +21,7 @@ guard let text = args.first else {
     print("usage: mtprobe \"text\" [--target ru] [--mono pt] [--card word] [--model sonnet] [--effort low] [--raw]")
     exit(2)
 }
-guard let bin = ClaudeLocator.locate(configured: nil) else { print("claude not found"); exit(1) }
+guard Tools.claude != nil else { print("claude not found"); exit(1) }
 
 let t0 = Date()
 func ts() -> String { String(format: "%6.2fs", Date().timeIntervalSince(t0)) }
@@ -42,12 +42,12 @@ if let card {
     user = Prompts.snippetUser(text)
 }
 
-let req = ClaudeRequest(binary: bin, model: model, system: system, user: user, effort: effort)
+let req = ClaudeRequest(model: model, system: system, user: user, effort: effort)
 if warm > 0 {
     // Measure warm-session latency: run the same task `warm` times through the pool.
     for i in 0..<warm {
         let s = Date(); var first: Double?; var out = ""
-        for try await ev in await ClaudePool.shared.stream(binary: bin, model: model, system: system, user: user) {
+        for try await ev in await ClaudePool.shared.stream(model: model, system: system, user: user, scope: "probe") {
             if case .text(let t) = ev { if first == nil { first = Date().timeIntervalSince(s) }; out += t }
         }
         print(String(format: "turn %d: first %.2fs total %.2fs", i, first ?? -1, Date().timeIntervalSince(s)))

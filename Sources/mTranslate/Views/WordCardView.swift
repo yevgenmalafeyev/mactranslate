@@ -55,7 +55,7 @@ struct WordCardView: View {
                         if job.status == .loading || job.status == .streaming {
                             HStack(spacing: 8) {
                                 ProgressView().controlSize(.small)
-                                Text(job.head == nil ? "Looking up “\(job.surface)”…" : "Loading meanings…")
+                                Text(verbatim: job.head == nil ? "Looking up “\(job.surface)”…" : "Loading meanings…")
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -222,7 +222,7 @@ struct ImagePanel: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 6))
                                         .overlay(RoundedRectangle(cornerRadius: 6)
                                             .stroke(job.selectedSense == i ? Color.accentColor : .clear, lineWidth: 2))
-                                    Text("\(i + 1). \(s.gloss)").font(.system(size: fs(10), weight: job.contextSense == i && !job.historyOnly ? .bold : .regular))
+                                    Text(verbatim: "\(i + 1). \(s.gloss)").font(.system(size: fs(10), weight: job.contextSense == i && !job.historyOnly ? .bold : .regular))
                                         .foregroundStyle(job.contextSense == i && !job.historyOnly ? Color.accentColor : .primary)
                                         .lineLimit(1).frame(width: 84)
                                 }
@@ -239,11 +239,11 @@ struct ImagePanel: View {
     @ViewBuilder private var mainImage: some View {
         let i = job.selectedSense
         if let hit = job.images[i]?.first {
-            AsyncImage(url: hit.thumbURL) { phase in
+            RemoteImage(hit: hit) { phase in
                 switch phase {
                 case .success(let img): img.resizable().scaledToFit()
                 case .failure: placeholder(i)
-                default: ProgressView().controlSize(.small)
+                case .loading: ProgressView().controlSize(.small)
                 }
             }
         } else if job.imagesLoading.contains(i) || (i < job.senses.count && job.images[i] == nil) {
@@ -255,7 +255,7 @@ struct ImagePanel: View {
 
     @ViewBuilder private func thumb(_ i: Int) -> some View {
         if let hit = job.images[i]?.first {
-            AsyncImage(url: hit.thumbURL) { phase in
+            RemoteImage(hit: hit) { phase in
                 if case .success(let img) = phase { img.resizable().scaledToFill() } else { Color.clear }
             }
         } else {
@@ -272,5 +272,34 @@ struct ImagePanel: View {
                 .font(.system(size: fs(11)))
         }
         .foregroundStyle(.tertiary)
+    }
+}
+
+/// A thumbnail loaded through `ImageService.thumbnail` (provider host only, no redirects, size-capped,
+/// nothing cached on disk) instead of the system's general-purpose image loader.
+enum RemoteImagePhase { case loading, success(Image), failure }
+
+struct RemoteImage<Content: View>: View {
+    typealias Phase = RemoteImagePhase
+
+    let hit: ImageHit
+    let content: (Phase) -> Content
+    @State private var phase: Phase = .loading
+
+    init(hit: ImageHit, @ViewBuilder content: @escaping (Phase) -> Content) {
+        self.hit = hit
+        self.content = content
+    }
+
+    var body: some View {
+        content(phase)
+            .task(id: hit.thumbURL) {
+                phase = .loading
+                if let cg = await ImageService.shared.thumbnail(hit) {
+                    phase = .success(Image(decorative: cg, scale: 1))
+                } else if !Task.isCancelled {
+                    phase = .failure
+                }
+            }
     }
 }

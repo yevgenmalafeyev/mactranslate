@@ -40,7 +40,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var prefetchAll = false
     public var streaming = true
     public var launchAtLogin = true
-    public var claudePath: String? = nil
     public var pixabayEnabled = true
     public var pexelsEnabled = true
     public var keepWarmMinutes = 10
@@ -61,15 +60,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
         model = v(.model, d.model)
         level = v(.level, d.level)
         triggerMode = v(.triggerMode, d.triggerMode)
-        doublePressMs = v(.doublePressMs, d.doublePressMs)
+        // Stored settings can be rewritten by any program, so values are kept inside the ranges the UI offers:
+        // a huge double-press window would turn every second ⌘C into a translation request.
+        doublePressMs = min(max(v(.doublePressMs, d.doublePressMs), 200), 1000)
         popupPosition = v(.popupPosition, d.popupPosition)
         prefetchAll = v(.prefetchAll, d.prefetchAll)
         streaming = v(.streaming, d.streaming)
         launchAtLogin = v(.launchAtLogin, d.launchAtLogin)
-        claudePath = (try? c.decodeIfPresent(String.self, forKey: .claudePath)) ?? nil
         pixabayEnabled = v(.pixabayEnabled, d.pixabayEnabled)
         pexelsEnabled = v(.pexelsEnabled, d.pexelsEnabled)
-        keepWarmMinutes = v(.keepWarmMinutes, d.keepWarmMinutes)
+        keepWarmMinutes = min(max(v(.keepWarmMinutes, d.keepWarmMinutes), 0), 60)
         wikimediaEnabled = v(.wikimediaEnabled, d.wikimediaEnabled)
         openverseEnabled = v(.openverseEnabled, d.openverseEnabled)
         didInitialLoginRegistration = v(.didInitialLoginRegistration, d.didInitialLoginRegistration)

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 public struct ImageProviders: Sendable {
     public var pixabayKey: String?
@@ -24,13 +25,99 @@ public enum KeyCheck: Sendable, Equatable {
 public actor ImageService {
     public static let shared = ImageService()
 
+    /// Nothing from API calls is written to disk: request URLs carry the Pixabay key, and results are
+    /// already cached in the store. Redirects are not followed (the endpoints are fixed and don't need them).
     private let session: URLSession = {
-        let c = URLSessionConfiguration.default
-        c.urlCache = URLCache(memoryCapacity: 4 << 20, diskCapacity: 64 << 20)
+        let c = URLSessionConfiguration.ephemeral
+        c.urlCache = nil
+        c.requestCachePolicy = .reloadIgnoringLocalCacheData
+        c.httpCookieStorage = nil
         c.timeoutIntervalForRequest = 6
+        c.timeoutIntervalForResource = 20
         c.httpAdditionalHeaders = ["User-Agent": "mTranslate/1.0 (https://github.com/yevgenmalafeyev/mtranslate)"]
-        return URLSession(configuration: c)
+        return URLSession(configuration: c, delegate: NoRedirects(), delegateQueue: nil)
     }()
+
+    /// Largest API answer accepted (real ones are a few kB).
+    static let maxBody = 2 << 20
+
+    /// Hosts thumbnails may be loaded from, per provider. Anything else an API (or a tampered cache) names
+    /// is dropped, so showing a card can't make the app contact an arbitrary server.
+    static let imageHosts: [String: [String]] = [
+        "Pixabay": ["pixabay.com"],
+        "Pexels": ["pexels.com"],
+        "Wikipedia": ["wikimedia.org"],
+        "Wikimedia": ["wikimedia.org"],
+        "Openverse": ["openverse.org"],
+    ]
+
+    static func isHTTPS(_ u: URL, hosts: [String]? = nil) -> Bool {
+        guard u.scheme?.lowercased() == "https",
+              let host = URLComponents(url: u, resolvingAgainstBaseURL: false)?.percentEncodedHost?.lowercased(),
+              host.range(of: "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", options: .regularExpression) != nil,
+              u.user == nil, u.password == nil, u.port == nil
+        else { return false }
+        guard let hosts else { return true }
+        return hosts.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    /// A search query made of model output, reduced to a few plain words; nil if nothing usable is left.
+    public static func cleanQuery(_ s: String, maxLength: Int = 60, maxWords: Int = 6) -> String? {
+        let plain = s.replacingOccurrences(of: "[^\\p{L}\\p{N}'(),. -]+", with: " ", options: .regularExpression)
+        let words = plain.split(separator: " ").prefix(maxWords)
+        let q = String(words.joined(separator: " ").prefix(maxLength)).trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? nil : q
+    }
+
+    /// Largest thumbnail accepted, and the size it is decoded to.
+    static let maxImageBytes = 4 << 20
+    static let maxImagePixels = 1200
+
+    private let thumbs: NSCache<NSURL, CGImage> = {
+        let c = NSCache<NSURL, CGImage>()
+        c.countLimit = 60
+        return c
+    }()
+
+    /// Loads a thumbnail the careful way: provider host only, no redirects, nothing written to disk,
+    /// size-capped, must be an image, decoded to a bounded bitmap.
+    public func thumbnail(_ hit: ImageHit) async -> CGImage? {
+        let url = hit.thumbURL
+        guard let hosts = Self.imageHosts[hit.provider], Self.isHTTPS(url, hosts: hosts) else { return nil }
+        if let c = thumbs.object(forKey: url as NSURL) { return c }
+        guard let (bytes, resp) = try? await session.bytes(for: URLRequest(url: url)),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              (http.mimeType ?? "").lowercased().hasPrefix("image/"), (http.mimeType ?? "").lowercased() != "image/svg+xml",
+              resp.expectedContentLength <= Int64(Self.maxImageBytes)
+        else { return nil }
+        var data = Data()
+        if resp.expectedContentLength > 0 { data.reserveCapacity(Int(resp.expectedContentLength)) }
+        do {
+            for try await b in bytes {
+                data.append(b)
+                if data.count > Self.maxImageBytes { return nil }
+            }
+        } catch { return nil }
+        let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                     kCGImageSourceCreateThumbnailWithTransform: true,
+                                     kCGImageSourceThumbnailMaxPixelSize: Self.maxImagePixels]
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let img = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
+        else { return nil }
+        thumbs.setObject(img, forKey: url as NSURL)
+        return img
+    }
+
+    /// Keeps only hits whose thumbnail is on the provider's own host; other links must at least be https.
+    static func vetted(_ hits: [ImageHit]) -> [ImageHit] {
+        hits.compactMap { h in
+            guard let hosts = imageHosts[h.provider], isHTTPS(h.thumbURL, hosts: hosts) else { return nil }
+            var h = h
+            if !isHTTPS(h.fullURL) { h.fullURL = h.thumbURL }
+            if let p = h.pageURL, !isHTTPS(p) { h.pageURL = nil }
+            return h
+        }
+    }
 
     private var inflight: [String: Task<[ImageHit], Never>] = [:]
 
@@ -38,9 +125,9 @@ public actor ImageService {
 
     public func hits(query: String, wiki: String?, providers: ImageProviders) async -> [ImageHit] {
         let key = query.lowercased() + "|" + (wiki ?? "")
-        if let cached = try? await Store.shared.imageHits(query: key) { return cached }
+        if let cached = try? await Store.shared.imageHits(query: key) { return Self.vetted(cached) }
         if let t = inflight[key] { return await t.value }
-        let t = Task { await self.fetch(query: query, wiki: wiki, providers: providers) }
+        let t = Task { Self.vetted(await self.fetch(query: query, wiki: wiki, providers: providers)) }
         inflight[key] = t
         let r = await t.value
         inflight[key] = nil
@@ -86,6 +173,7 @@ public actor ImageService {
         req.cachePolicy = .reloadIgnoringLocalCacheData
         do {
             let (data, resp) = try await session.data(for: req)
+            guard data.count <= Self.maxBody else { return .unreachable("Unexpected answer from the provider") }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if code == 200, (try? JSONSerialization.jsonObject(with: data)) is [String: Any] { return .ok }
             if code == 429 { return .unreachable("Rate limited by the provider — try again in a minute") }
@@ -97,9 +185,16 @@ public actor ImageService {
     }
 
     private func json(_ req: URLRequest) async -> [String: Any]? {
-        guard let (data, resp) = try? await session.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200
+        guard let (bytes, resp) = try? await session.bytes(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200, resp.expectedContentLength <= Int64(Self.maxBody)
         else { return nil }
+        var data = Data()
+        do {
+            for try await b in bytes {
+                data.append(b)
+                if data.count > Self.maxBody { return nil }
+            }
+        } catch { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
@@ -194,5 +289,12 @@ public actor ImageService {
     static func stripHTML(_ s: String) -> String {
         s.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }

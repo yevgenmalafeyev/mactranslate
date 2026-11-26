@@ -89,19 +89,11 @@ struct SettingsView: View {
 
             Section("Claude CLI") {
                 HStack {
-                    TextField("", text: Binding(
-                        get: { store.s.claudePath ?? "" },
-                        set: { store.s.claudePath = $0.isEmpty ? nil : $0 }),
-                              prompt: Text("Path to claude (empty = auto-detect)"))
-                        .textFieldStyle(.roundedBorder)
-                        .labelsHidden()
-                    Button("Detect") {
-                        let configured = store.s.claudePath
-                        Task {
-                            let u = await Task.detached { ClaudeLocator.locate(configured: configured) }.value
-                            claudeTest = u.map { "Found: \($0.path)" } ?? "Not found"
-                        }
-                    }
+                    // Shown, not configurable: a stored path could be changed by any program.
+                    Text(verbatim: Tools.claude.map { "Using \($0.path)" } ?? "claude not found in ~/.local/bin, /opt/homebrew/bin or /usr/local/bin")
+                        .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                        .lineLimit(2).truncationMode(.middle)
+                    Spacer()
                     Button(testing ? "Testing…" : "Test") { test() }.disabled(testing)
                 }
                 if !claudeTest.isEmpty {
@@ -136,18 +128,17 @@ struct SettingsView: View {
     private func test() {
         testing = true
         claudeTest = ""
-        let configured = store.s.claudePath
         let model = store.s.model
         Task {
             defer { testing = false }
-            guard let bin = await Task.detached(operation: { ClaudeLocator.locate(configured: configured) }).value else {
+            guard let bin = Tools.claude else {
                 claudeTest = ClaudeError.cliNotFound.localizedDescription
                 return
             }
             let started = Date()
             var text = ""
             do {
-                let req = ClaudeRequest(binary: bin, model: model, system: "Reply with exactly: OK", user: "ping")
+                let req = ClaudeRequest(model: model, system: "Reply with exactly: OK", user: "ping")
                 for try await ev in ClaudeRunner().stream(req) {
                     if case .text(let t) = ev { text += t }
                     if case .result(true, let m) = ev { throw ClaudeError.classify(status: 1, text: m ?? "") }

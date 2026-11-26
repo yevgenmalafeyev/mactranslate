@@ -31,6 +31,7 @@ public actor Store {
         let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("mTranslate", isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: d.path)
         return d
     }
 
@@ -113,10 +114,10 @@ public actor Store {
 
     // MARK: Words
 
-    public func saveForms(_ pairs: [(surface: String, lemma: String)], sourceLang: String) throws {
+    public func saveForms(_ pairs: [(surface: String, lemma: String)], sourceLang: String, replace: Bool = true) throws {
         let d = try conn()
         for p in pairs {
-            try d.run("INSERT OR REPLACE INTO word_forms VALUES(?,?,?)",
+            try d.run("INSERT OR \(replace ? "REPLACE" : "IGNORE") INTO word_forms VALUES(?,?,?)",
                       [.text(p.surface.lowercased()), .text(sourceLang), .text(p.lemma)])
         }
     }
@@ -137,7 +138,8 @@ public actor Store {
 
     public func saveCard(_ card: WordCard, sourceLang: String, target: String, model: String) throws {
         let json = String(decoding: try JSONEncoder().encode(card), as: UTF8.self)
-        try conn().run("INSERT OR REPLACE INTO word_cards VALUES(?,?,?,?,?,?,?,?,?)",
+        // A card that exists is never overwritten: a later text can't swap a word's known card for its own.
+        try conn().run("INSERT OR IGNORE INTO word_cards VALUES(?,?,?,?,?,?,?,?,?)",
                        [.text(card.head.lemma), .text(sourceLang), .text(target), .int(Int64(Prompts.promptVersion)), .text(model),
                         .text(TextTools.fold(card.head.lemma)), .text(json), .double(now), .double(now)])
     }
@@ -206,10 +208,20 @@ public actor Store {
         let d = try conn()
         try d.run("DELETE FROM translations WHERE snippet_id=?", [.int(id)])
         try d.run("DELETE FROM snippets WHERE id=?", [.int(id)])
+        // Deleted text must not linger in the write-ahead log.
+        try? d.exec("PRAGMA wal_checkpoint(TRUNCATE);")
     }
 
     public func deleteCard(lemma: String, sourceLang: String, target: String) throws {
-        try conn().run("DELETE FROM word_cards WHERE lemma=? AND source_lang=? AND target=?",
-                       [.text(lemma), .text(sourceLang), .text(target)])
+        let d = try conn()
+        try d.run("DELETE FROM word_cards WHERE lemma=? AND source_lang=? AND target=?",
+                  [.text(lemma), .text(sourceLang), .text(target)])
+        // With the card go the word forms that led to it and its remembered contexts.
+        if try d.query("SELECT 1 FROM word_cards WHERE lemma=? AND source_lang=? LIMIT 1", [.text(lemma), .text(sourceLang)]).isEmpty {
+            try d.run("DELETE FROM word_forms WHERE lemma=? AND source_lang=?", [.text(lemma), .text(sourceLang)])
+        }
+        try d.run("DELETE FROM word_context WHERE lemma=? AND source_lang=? AND target=?",
+                  [.text(lemma), .text(sourceLang), .text(target)])
+        try? d.exec("PRAGMA wal_checkpoint(TRUNCATE);")
     }
 }

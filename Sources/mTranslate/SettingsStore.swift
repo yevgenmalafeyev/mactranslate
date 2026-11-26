@@ -6,10 +6,16 @@ import Observation
 final class SettingsStore {
     static let shared = SettingsStore()
     private static let key = "settings.v1"
+    /// Clipboard-watch mode sends text without a key press, so the stored setting alone (which any program
+    /// can change) doesn't turn it on: choosing it in Configuration also leaves this mark in the Keychain.
+    private static let clipboardMarker = "clipboard-mode"
 
     var s: AppSettings {
         didSet {
             guard s != oldValue else { return }
+            if s.triggerMode != oldValue.triggerMode {
+                Keychain.set(Self.clipboardMarker, s.triggerMode == .clipboard ? "on" : nil)
+            }
             if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
             onChange?(oldValue, s)
         }
@@ -27,6 +33,8 @@ final class SettingsStore {
 
     private init() {
         if let d = UserDefaults.standard.data(forKey: Self.key), let v = try? JSONDecoder().decode(AppSettings.self, from: d) {
+            var v = v
+            if v.triggerMode == .clipboard, Keychain.get(Self.clipboardMarker) != "on" { v.triggerMode = .eventTap }
             s = v
         } else {
             s = AppSettings()
