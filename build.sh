@@ -16,7 +16,7 @@ BUNDLE_ID=local.mtranslate.app
 IDENTITY="${IDENTITY:--}"
 DIST_IDENTITY="${DIST_IDENTITY:-Developer ID Application}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-mrecorder-notary}"
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-0.1.1}
 BUILD=$(date +%Y%m%d%H%M)
 
 # The distributable DMG gets a universal (Apple silicon + Intel) binary; local builds stay arm64-only.
