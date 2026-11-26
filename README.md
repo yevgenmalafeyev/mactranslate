@@ -7,8 +7,15 @@ Menu-bar app: select text anywhere, press **⌘C ⌘C** quickly → popup with t
 - ESC: card → back; snippet → close. ⌘W closes.
 - In-flight translations finish in the background and land in History (SQLite at `~/Library/Application Support/mTranslate/`).
 
+## Install
+1. Download `mTranslate-<version>.dmg` from [Releases](https://github.com/yevgenmalafeyev/mtranslate/releases/latest) (universal: Apple silicon + Intel, macOS 15+).
+2. Open it and drag **mTranslate** onto **Applications**.
+3. The app isn't notarized by Apple, so the first launch is blocked. Open it once, then go to **System Settings → Privacy & Security → Open Anyway**. Or run `xattr -dr com.apple.quarantine /Applications/mTranslate.app`.
+4. Grant **Input Monitoring** when asked (needed to detect ⌘C ⌘C), and make sure the `claude` CLI is installed and logged in.
+
 ## Build
     ./build.sh install            # release build, sign, install to ~/Applications, launch
+    ./build.sh dmg                # universal build + build/mTranslate-<version>.dmg
     swift test                    # core unit tests
     swift run mtprobe "text" --target ru [--mono pt] [--card word]   # CLI probe of prompts/parser
     open "mtranslate://translate?text=Hello"                        # trigger popup without the hotkey
